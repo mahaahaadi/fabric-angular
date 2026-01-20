@@ -60,19 +60,19 @@ import { PropertiesPanelComponent } from '../properties-panel/properties-panel.c
       .canvas-wrapper {
         flex: 1;
         position: relative;
-        overflow: hidden;
+        overflow: auto;
         display: flex;
-        align-items: center;
-        justify-content: center;
+        align-items: flex-start;
+        justify-content: flex-start;
         padding: 20px;
         min-width: 0;
+        background-color: #1a1a1a;
       }
 
       canvas {
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         border-radius: 4px;
-        max-width: 100%;
-        max-height: 100%;
+        flex-shrink: 0;
       }
 
       .properties {
@@ -103,14 +103,103 @@ export class SwitchboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resizeCanvas();
   }
 
+  @HostListener('window:keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent): void {
+    // Don't trigger shortcuts when typing in input fields
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return;
+    }
+
+    switch (event.key.toLowerCase()) {
+      case 'a':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.selectAll();
+        }
+        break;
+      case 'c':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.copySelected();
+        } else {
+          this.canvasService.setDrawingMode('circle');
+        }
+        break;
+      case 'v':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.paste();
+        } else {
+          this.canvasService.setDrawingMode('select');
+        }
+        break;
+      case 'x':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.cutSelected();
+        }
+        break;
+      case 'd':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.duplicateSelected();
+        }
+        break;
+      case 'l':
+        this.canvasService.setDrawingMode('line');
+        break;
+      case 'r':
+        this.canvasService.setDrawingMode('rect');
+        break;
+      case 't':
+        this.canvasService.addText();
+        break;
+      case 'delete':
+      case 'backspace':
+        event.preventDefault();
+        this.canvasService.deleteSelected();
+        break;
+      case 'escape':
+        this.canvasService.setDrawingMode('select');
+        break;
+      case '=':
+      case '+':
+        event.preventDefault();
+        this.canvasService.zoomIn();
+        break;
+      case '-':
+        event.preventDefault();
+        this.canvasService.zoomOut();
+        break;
+      case '0':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.resetZoom();
+        }
+        break;
+      case 'arrowup':
+        event.preventDefault();
+        this.canvasService.moveSelected(0, event.shiftKey ? -10 : -1);
+        break;
+      case 'arrowdown':
+        event.preventDefault();
+        this.canvasService.moveSelected(0, event.shiftKey ? 10 : 1);
+        break;
+      case 'arrowleft':
+        event.preventDefault();
+        this.canvasService.moveSelected(event.shiftKey ? -10 : -1, 0);
+        break;
+      case 'arrowright':
+        event.preventDefault();
+        this.canvasService.moveSelected(event.shiftKey ? 10 : 1, 0);
+        break;
+    }
+  }
+
   private resizeCanvas(): void {
-    if (isPlatformBrowser(this.platformId) && this.canvasRef?.nativeElement) {
-      const parent = this.canvasRef.nativeElement.parentElement;
-      if (parent) {
-        const width = parent.clientWidth - 40;
-        const height = parent.clientHeight - 40;
-        this.canvasService.resizeCanvas(width, height);
-      }
+    if (isPlatformBrowser(this.platformId)) {
+      this.canvasService.resizeCanvas(0, 0);
     }
   }
 

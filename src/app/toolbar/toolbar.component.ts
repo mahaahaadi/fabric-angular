@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, computed } from '@angular/core';
 import { CanvasService, DrawingMode } from '../services/canvas.service';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
@@ -14,7 +14,7 @@ import { MenuItem } from 'primeng/api';
       <p-toolbar styleClass="toolbar-custom">
         <div class="p-toolbar-group-start">
           <div class="logo-section">
-            <i class="pi pi-bolt" style="font-size: 1.5rem; color: #00ff88;"></i>
+            <i class="pi pi-bolt" style="font-size: 1.25rem; color: #3DCD58;"></i>
             <span class="project-title">Himalayan - Schneider Electric</span>
           </div>
         </div>
@@ -22,7 +22,7 @@ import { MenuItem } from 'primeng/api';
         <div class="p-toolbar-group-center">
           <div class="tool-group">
             <p-button
-              icon="pi pi-cursor"
+              icon="pi pi-arrow-up-right"
               [class]="currentMode() === 'select' ? 'p-button-success' : 'p-button-outlined'"
               (onClick)="setMode('select')"
               pTooltip="Select (V)"
@@ -83,6 +83,25 @@ import { MenuItem } from 'primeng/api';
               tooltipPosition="bottom"
             />
           </div>
+          <div class="divider"></div>
+
+          <div class="tool-group zoom-controls">
+            <p-button
+              icon="pi pi-minus"
+              (onClick)="zoomOut()"
+              class="p-button-outlined p-button-secondary"
+              pTooltip="Zoom Out (-)"
+              tooltipPosition="bottom"
+            />
+            <span class="zoom-level" (click)="resetZoom()" pTooltip="Reset Zoom">{{ zoomPercent() }}%</span>
+            <p-button
+              icon="pi pi-plus"
+              (onClick)="zoomIn()"
+              class="p-button-outlined p-button-secondary"
+              pTooltip="Zoom In (+)"
+              tooltipPosition="bottom"
+            />
+          </div>
         </div>
 
         <div class="p-toolbar-group-end">
@@ -113,23 +132,27 @@ import { MenuItem } from 'primeng/api';
         width: 100%;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         z-index: 100;
+        flex-shrink: 0;
       }
 
       :host ::ng-deep .toolbar-custom {
-        background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+        background: #000000;
         border: none;
-        border-bottom: 2px solid #00ff88;
-        padding: 0.75rem 1.5rem;
+        border-bottom: 2px solid #3DCD58;
+        padding: 0.4rem 1.5rem;
+        flex-wrap: nowrap;
+        min-height: auto;
       }
 
       .logo-section {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: 0.5rem;
+        white-space: nowrap;
       }
 
       .project-title {
-        font-size: 1.1rem;
+        font-size: 0.95rem;
         font-weight: 600;
         color: #e0e0e0;
         letter-spacing: 0.5px;
@@ -137,35 +160,218 @@ import { MenuItem } from 'primeng/api';
 
       .tool-group {
         display: flex;
-        gap: 0.5rem;
+        gap: 0.2rem;
         align-items: center;
+        flex-shrink: 0;
+      }
+
+      .zoom-controls {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 6px;
+        padding: 2px 6px;
+      }
+
+      .zoom-level {
+        min-width: 45px;
+        text-align: center;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #3DCD58;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+        transition: background 0.2s;
+      }
+
+      .zoom-level:hover {
+        background: rgba(61, 205, 88, 0.15);
       }
 
       .divider {
         width: 1px;
-        height: 30px;
-        background: rgba(255, 255, 255, 0.2);
-        margin: 0 1rem;
-      }
-
-      :host ::ng-deep .p-button {
-        transition: all 0.2s ease;
-      }
-
-      :host ::ng-deep .p-button:hover:not(:disabled) {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
-      }
-
-      :host ::ng-deep .p-button-success:not(.p-button-outlined) {
-        background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
-        border-color: #00ff88;
+        height: 24px;
+        background: rgba(255, 255, 255, 0.15);
+        margin: 0 0.5rem;
+        flex-shrink: 0;
       }
 
       :host ::ng-deep .p-toolbar-group-center {
         display: flex;
-        gap: 1rem;
+        gap: 0.5rem;
         align-items: center;
+        flex-shrink: 0;
+      }
+
+      :host ::ng-deep .p-toolbar-group-end {
+        flex-shrink: 0;
+      }
+
+      /* Button base styles */
+      :host ::ng-deep .p-button {
+        min-width: 36px;
+        min-height: 36px;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s ease;
+        border-radius: 6px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      :host ::ng-deep .p-button .p-button-icon {
+        font-size: 1rem;
+      }
+
+      /* Outlined button styles (inactive) */
+      :host ::ng-deep .p-button-outlined {
+        background: transparent;
+        border: none;
+        color: #808080;
+      }
+
+      :host ::ng-deep .p-button-outlined:hover:not(:disabled) {
+        background: rgba(61, 205, 88, 0.1);
+        color: #3DCD58;
+      }
+
+      :host ::ng-deep .p-button-outlined:active:not(:disabled) {
+        background: rgba(61, 205, 88, 0.2);
+      }
+
+      /* Active/Selected button styles - Schneider Green */
+      :host ::ng-deep .p-button-success:not(.p-button-outlined) {
+        background: #3DCD58;
+        border: none;
+        color: #000000;
+      }
+
+      :host ::ng-deep .p-button-success:not(.p-button-outlined):hover {
+        background: #2fb348;
+      }
+
+      :host ::ng-deep .p-button-success:not(.p-button-outlined) .p-button-icon {
+        color: #000000;
+      }
+
+      /* Info button (Switch) - Schneider Blue */
+      :host ::ng-deep .p-button-info:not(.p-button-outlined) {
+        background: #42B4E6;
+        border: none;
+        color: #000000;
+      }
+
+      :host ::ng-deep .p-button-info:not(.p-button-outlined):hover {
+        background: #329fd1;
+      }
+
+      :host ::ng-deep .p-button-info:not(.p-button-outlined) .p-button-icon {
+        color: #000000;
+      }
+
+      /* Danger button (Breaker) */
+      :host ::ng-deep .p-button-danger:not(.p-button-outlined) {
+        background: #ef4444;
+        border: none;
+        color: #ffffff;
+      }
+
+      :host ::ng-deep .p-button-danger:not(.p-button-outlined):hover {
+        background: #dc2626;
+      }
+
+      /* Warning button (Outlet) */
+      :host ::ng-deep .p-button-warning:not(.p-button-outlined) {
+        background: #f59e0b;
+        border: none;
+        color: #000000;
+      }
+
+      :host ::ng-deep .p-button-warning:not(.p-button-outlined):hover {
+        background: #d97706;
+      }
+
+      /* Delete button */
+      :host ::ng-deep .p-button-outlined.p-button-danger {
+        color: #ef4444;
+      }
+
+      :host ::ng-deep .p-button-outlined.p-button-danger:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+      }
+
+      /* Split button (Save) */
+      :host ::ng-deep .p-splitbutton {
+        flex-shrink: 0;
+      }
+
+      :host ::ng-deep .p-splitbutton .p-button {
+        min-width: auto;
+        width: auto;
+        padding: 0.4rem 0.8rem;
+        height: 36px;
+      }
+
+      :host ::ng-deep .p-splitbutton .p-button-success {
+        background: #3DCD58;
+        border: none;
+        color: #000000;
+        font-weight: 600;
+      }
+
+      :host ::ng-deep .p-splitbutton .p-button-success:hover {
+        background: #2fb348;
+      }
+
+      :host ::ng-deep .p-splitbutton .p-splitbutton-menubutton {
+        border-left: 1px solid rgba(0, 0, 0, 0.2);
+      }
+
+      /* Dropdown menu styling */
+      :host ::ng-deep .p-tieredmenu,
+      :host ::ng-deep .p-menu {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        padding: 0.5rem;
+        min-width: 180px;
+      }
+
+      :host ::ng-deep .p-menuitem {
+        margin: 0.25rem 0;
+      }
+
+      :host ::ng-deep .p-menuitem-link {
+        padding: 0.6rem 1rem;
+        border-radius: 4px;
+        transition: all 0.15s ease;
+      }
+
+      :host ::ng-deep .p-menuitem-link:not(.p-disabled):hover {
+        background: rgba(61, 205, 88, 0.15);
+      }
+
+      :host ::ng-deep .p-menuitem-link .p-menuitem-text {
+        color: #e0e0e0;
+        font-weight: 500;
+      }
+
+      :host ::ng-deep .p-menuitem-link:not(.p-disabled):hover .p-menuitem-text {
+        color: #3DCD58;
+      }
+
+      :host ::ng-deep .p-menuitem-link .p-menuitem-icon {
+        color: #808080;
+        margin-right: 0.75rem;
+      }
+
+      :host ::ng-deep .p-menuitem-link:not(.p-disabled):hover .p-menuitem-icon {
+        color: #3DCD58;
       }
     `,
   ],
@@ -175,6 +381,7 @@ export class ToolbarComponent {
 
   protected readonly currentMode = this.canvasService.mode;
   protected readonly canDelete = this.canvasService.canDelete;
+  protected readonly zoomPercent = computed(() => Math.round(this.canvasService.zoom() * 100));
 
   protected fileMenuItems: MenuItem[] = [
     {
@@ -204,6 +411,18 @@ export class ToolbarComponent {
 
   protected deleteSelected(): void {
     this.canvasService.deleteSelected();
+  }
+
+  protected zoomIn(): void {
+    this.canvasService.zoomIn();
+  }
+
+  protected zoomOut(): void {
+    this.canvasService.zoomOut();
+  }
+
+  protected resetZoom(): void {
+    this.canvasService.resetZoom();
   }
 
   protected saveProject(): void {

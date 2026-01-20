@@ -1,4 +1,4 @@
-import { Component, inject, effect } from '@angular/core';
+import { Component, inject, effect, computed } from '@angular/core';
 import { CanvasService } from '../services/canvas.service';
 import { CardModule } from 'primeng/card';
 import { InputTextModule } from 'primeng/inputtext';
@@ -7,6 +7,8 @@ import { ColorPickerModule } from 'primeng/colorpicker';
 import { FormsModule } from '@angular/forms';
 import { SliderModule } from 'primeng/slider';
 import { DividerModule } from 'primeng/divider';
+import { TooltipModule } from 'primeng/tooltip';
+import { trigger, state, style, animate, transition } from '@angular/animations';
 
 @Component({
   selector: 'app-properties-panel',
@@ -18,11 +20,44 @@ import { DividerModule } from 'primeng/divider';
     FormsModule,
     SliderModule,
     DividerModule,
+    TooltipModule,
+  ],
+  animations: [
+    trigger('slideInOut', [
+      state('hidden', style({
+        transform: 'translateX(100%)',
+        opacity: 0
+      })),
+      state('visible', style({
+        transform: 'translateX(0)',
+        opacity: 1
+      })),
+      transition('hidden => visible', [
+        animate('300ms ease-out')
+      ]),
+      transition('visible => hidden', [
+        animate('200ms ease-in')
+      ])
+    ]),
+    trigger('fadeIn', [
+      transition(':enter', [
+        style({ opacity: 0, transform: 'translateY(-10px)' }),
+        animate('200ms 100ms ease-out', style({ opacity: 1, transform: 'translateY(0)' }))
+      ])
+    ])
   ],
   template: `
-    <div class="properties-panel">
+    <div 
+      class="properties-panel" 
+      [@slideInOut]="selectedObject() ? 'visible' : 'hidden'"
+      [class.has-selection]="selectedObject()"
+    >
       @if (selectedObject()) {
-        <p-card header="Properties" styleClass="properties-card">
+        <div class="panel-header">
+          <i class="pi pi-sliders-h"></i>
+          <span>Properties</span>
+        </div>
+        <div class="panel-content" @fadeIn>
           <div class="property-section">
             <div class="property-group">
               <label class="property-label">Position</label>
@@ -108,14 +143,15 @@ import { DividerModule } from 'primeng/divider';
                   <div class="color-picker-wrapper">
                     <p-colorPicker
                       [(ngModel)]="strokeColor"
-                      (ngModelChange)="updateProperty('stroke', $event)"
+                      (onChange)="onColorChange('stroke', $event)"
                       [inline]="false"
+                      format="hex"
                     />
                     <input
                       type="text"
                       pInputText
                       [(ngModel)]="strokeColor"
-                      (ngModelChange)="updateProperty('stroke', $event)"
+                      (change)="updateProperty('stroke', strokeColor)"
                       class="color-input"
                     />
                   </div>
@@ -130,7 +166,7 @@ import { DividerModule } from 'primeng/divider';
                     [max]="20"
                     [step]="1"
                   />
-                  <span class="slider-value">{{ strokeWidth }}</span>
+                  <span class="slider-value">{{ strokeWidth }}px</span>
                 </div>
               }
 
@@ -140,14 +176,15 @@ import { DividerModule } from 'primeng/divider';
                   <div class="color-picker-wrapper">
                     <p-colorPicker
                       [(ngModel)]="fillColor"
-                      (ngModelChange)="updateProperty('fill', $event)"
+                      (onChange)="onColorChange('fill', $event)"
                       [inline]="false"
+                      format="hex"
                     />
                     <input
                       type="text"
                       pInputText
                       [(ngModel)]="fillColor"
-                      (ngModelChange)="updateProperty('fill', $event)"
+                      (change)="updateProperty('fill', fillColor)"
                       class="color-input"
                     />
                   </div>
@@ -183,81 +220,150 @@ import { DividerModule } from 'primeng/divider';
                 <span class="slider-value">{{ (opacity * 100).toFixed(0) }}%</span>
               </div>
             </div>
+
+            <p-divider />
+
+            <div class="property-group">
+              <label class="property-label">Layer Order</label>
+              <div class="layer-controls">
+                <button 
+                  class="layer-btn" 
+                  (click)="bringToFront()" 
+                  pTooltip="Bring to Front"
+                  tooltipPosition="top"
+                >
+                  <i class="pi pi-angle-double-up"></i>
+                </button>
+                <button 
+                  class="layer-btn" 
+                  (click)="bringForward()" 
+                  pTooltip="Bring Forward"
+                  tooltipPosition="top"
+                >
+                  <i class="pi pi-angle-up"></i>
+                </button>
+                <button 
+                  class="layer-btn" 
+                  (click)="sendBackward()" 
+                  pTooltip="Send Backward"
+                  tooltipPosition="top"
+                >
+                  <i class="pi pi-angle-down"></i>
+                </button>
+                <button 
+                  class="layer-btn" 
+                  (click)="sendToBack()" 
+                  pTooltip="Send to Back"
+                  tooltipPosition="top"
+                >
+                  <i class="pi pi-angle-double-down"></i>
+                </button>
+              </div>
+            </div>
           </div>
-        </p-card>
-      } @else {
-        <p-card styleClass="properties-card empty-state">
-          <div class="empty-message">
-            <i class="pi pi-info-circle"></i>
-            <p>Select an object to view and edit its properties</p>
-          </div>
-        </p-card>
+        </div>
       }
     </div>
   `,
   styles: [
     `
       .properties-panel {
-        width: 320px;
-        background: #252525;
-        border-left: 1px solid #3a3a3a;
-        overflow-y: auto;
-        box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
+        width: 300px;
+        height: 100%;
+        max-height: 100%;
+        background: #1a1a1a;
+        border-left: 1px solid #333;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
 
-      :host ::ng-deep .properties-card {
-        background: transparent;
+      .properties-panel:not(.has-selection) {
+        width: 0;
+        min-width: 0;
         border: none;
-        box-shadow: none;
+        overflow: hidden;
       }
 
-      :host ::ng-deep .properties-card .p-card-body {
-        padding: 1rem;
-      }
-
-      :host ::ng-deep .properties-card .p-card-header {
-        background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
-        color: #00ff88;
+      .panel-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1rem;
+        background: #000000;
+        border-bottom: 2px solid #3DCD58;
+        color: #3DCD58;
         font-weight: 600;
-        border-bottom: 2px solid #00ff88;
+        font-size: 0.9rem;
+        letter-spacing: 0.5px;
+        flex-shrink: 0;
+      }
+
+      .panel-header i {
+        font-size: 1rem;
+      }
+
+      .panel-content {
         padding: 1rem;
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      .panel-content::-webkit-scrollbar {
+        width: 5px;
+      }
+
+      .panel-content::-webkit-scrollbar-track {
+        background: #1a1a1a;
+      }
+
+      .panel-content::-webkit-scrollbar-thumb {
+        background: #3DCD58;
+        border-radius: 3px;
+      }
+
+      .panel-content::-webkit-scrollbar-thumb:hover {
+        background: #2fb348;
       }
 
       .property-section {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.75rem;
+        padding-bottom: 0.75rem;
       }
 
       .property-group {
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 0.5rem;
       }
 
       .property-label {
-        font-size: 0.9rem;
+        font-size: 0.7rem;
         font-weight: 600;
-        color: #00ff88;
+        color: #3DCD58;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
       }
 
       .property-row {
-        display: flex;
-        gap: 0.75rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
       }
 
       .property-field {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-        flex: 1;
+        gap: 0.35rem;
+        min-width: 0;
       }
 
       .property-field label {
-        font-size: 0.85rem;
-        color: #b0b0b0;
+        font-size: 0.75rem;
+        color: #808080;
         font-weight: 500;
       }
 
@@ -272,68 +378,142 @@ import { DividerModule } from 'primeng/divider';
       }
 
       .slider-value {
-        font-size: 0.85rem;
-        color: #e0e0e0;
-        font-weight: 500;
-        margin-top: 0.25rem;
-      }
-
-      .empty-state {
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .empty-message {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1rem;
-        color: #808080;
-        text-align: center;
-        padding: 2rem;
-      }
-
-      .empty-message i {
-        font-size: 3rem;
-      }
-
-      .empty-message p {
-        margin: 0;
-        line-height: 1.5;
+        font-size: 0.75rem;
+        color: #3DCD58;
+        font-weight: 600;
+        margin-top: 0.2rem;
       }
 
       :host ::ng-deep .p-inputnumber {
         width: 100%;
+        display: flex;
+        height: 2.5rem;
+      }
+
+      :host ::ng-deep .p-inputnumber .p-inputtext {
+        width: 100%;
+        min-width: 0;
+        height: 2.5rem;
+      }
+
+      :host ::ng-deep .p-inputnumber-input {
+        width: 100% !important;
+        min-width: 0;
+        text-align: left;
+        padding: 0.5rem 2.5rem 0.5rem 0.75rem;
       }
 
       :host ::ng-deep .p-inputtext {
         background: #1a1a1a;
         border-color: #3a3a3a;
         color: #e0e0e0;
+        font-size: 0.9rem;
+        padding: 0.5rem 0.75rem;
       }
 
       :host ::ng-deep .p-inputtext:focus {
         border-color: #00ff88;
-        box-shadow: 0 0 0 0.2rem rgba(0, 255, 136, 0.25);
+        box-shadow: 0 0 0 0.2rem rgba(0, 255, 136, 0.2);
+      }
+
+      :host ::ng-deep .p-inputnumber-button-group {
+        display: flex;
+        flex-direction: column;
+        height: 2.5rem !important;
+        overflow: hidden;
+      }
+
+      :host ::ng-deep .p-inputnumber-button-group > button,
+      :host ::ng-deep .p-inputnumber-button-group > .p-button,
+      :host ::ng-deep .p-inputnumber-stacked .p-inputnumber-button-group > button {
+        background: #3a3a3a !important;
+        border-color: #3a3a3a !important;
+        color: #e0e0e0 !important;
+        padding: 0 !important;
+        width: 1.5rem !important;
+        height: 1.25rem !important;
+        min-height: 0 !important;
+        max-height: 1.25rem !important;
+        flex: 0 0 1.25rem !important;
+      }
+
+      :host ::ng-deep .p-inputnumber-button-group > button .p-icon,
+      :host ::ng-deep .p-inputnumber-button-group > button svg {
+        width: 0.5rem !important;
+        height: 0.5rem !important;
+      }
+
+      :host ::ng-deep .p-inputnumber-button-group > button:hover {
+        background: #3DCD58 !important;
+        border-color: #3DCD58 !important;
+        color: #000000 !important;
       }
 
       :host ::ng-deep .p-slider {
-        background: #3a3a3a;
+        background: #333;
+        height: 5px;
       }
 
       :host ::ng-deep .p-slider .p-slider-range {
-        background: linear-gradient(90deg, #00ff88 0%, #00cc6a 100%);
+        background: #3DCD58;
       }
 
       :host ::ng-deep .p-slider .p-slider-handle {
-        background: #00ff88;
-        border-color: #00cc6a;
+        background: #3DCD58;
+        border: 2px solid #2fb348;
+        width: 14px;
+        height: 14px;
+        margin-top: -6px;
+        transition: transform 0.15s ease;
+      }
+
+      :host ::ng-deep .p-slider .p-slider-handle:hover {
+        transform: scale(1.15);
       }
 
       :host ::ng-deep .p-divider {
         margin: 0.5rem 0;
+        border-color: #333;
+      }
+
+      :host ::ng-deep .p-colorpicker-preview {
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        border: 1px solid #333;
+      }
+
+      .layer-controls {
+        display: flex;
+        gap: 0.35rem;
+        justify-content: space-between;
+      }
+
+      .layer-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        color: #808080;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .layer-btn:hover {
+        background: rgba(61, 205, 88, 0.15);
+        color: #3DCD58;
+      }
+
+      .layer-btn:active {
+        background: rgba(61, 205, 88, 0.25);
+      }
+
+      .layer-btn i {
+        font-size: 1rem;
       }
     `,
   ],
@@ -392,5 +572,31 @@ export class PropertiesPanelComponent {
 
   protected updateProperty(property: string, value: any): void {
     this.canvasService.updateObjectProperty(property, value);
+  }
+
+  protected onColorChange(property: string, event: any): void {
+    const color = event.value;
+    if (property === 'stroke') {
+      this.strokeColor = color;
+    } else if (property === 'fill') {
+      this.fillColor = color;
+    }
+    this.canvasService.updateObjectProperty(property, color);
+  }
+
+  protected bringToFront(): void {
+    this.canvasService.bringToFront();
+  }
+
+  protected bringForward(): void {
+    this.canvasService.bringForward();
+  }
+
+  protected sendBackward(): void {
+    this.canvasService.sendBackward();
+  }
+
+  protected sendToBack(): void {
+    this.canvasService.sendToBack();
   }
 }
