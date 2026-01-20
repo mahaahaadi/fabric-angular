@@ -22,7 +22,7 @@ import { MenuItem } from 'primeng/api';
         <div class="p-toolbar-group-center">
           <div class="tool-group">
             <p-button
-              icon="pi pi-arrow-up-right"
+              icon="pi pi-arrow-up-left"
               [class]="currentMode() === 'select' ? 'p-button-success' : 'p-button-outlined'"
               (onClick)="setMode('select')"
               pTooltip="Select (V)"
@@ -83,6 +83,27 @@ import { MenuItem } from 'primeng/api';
               tooltipPosition="bottom"
             />
           </div>
+          <div class="divider"></div>
+
+          <div class="tool-group">
+            <p-button
+              icon="pi pi-undo"
+              (onClick)="undo()"
+              [disabled]="!canUndo()"
+              class="p-button-outlined p-button-secondary"
+              pTooltip="Undo (Ctrl+Z)"
+              tooltipPosition="bottom"
+            />
+            <p-button
+              icon="pi pi-refresh"
+              (onClick)="redo()"
+              [disabled]="!canRedo()"
+              class="p-button-outlined p-button-secondary"
+              pTooltip="Redo (Ctrl+Y)"
+              tooltipPosition="bottom"
+            />
+          </div>
+
           <div class="divider"></div>
 
           <div class="tool-group zoom-controls">
@@ -246,7 +267,8 @@ import { MenuItem } from 'primeng/api';
       :host ::ng-deep .p-button-success:not(.p-button-outlined) {
         background: #3DCD58;
         border: none;
-        color: #000000;
+        color: #ffffff;
+        border-radius: 6px;
       }
 
       :host ::ng-deep .p-button-success:not(.p-button-outlined):hover {
@@ -254,7 +276,7 @@ import { MenuItem } from 'primeng/api';
       }
 
       :host ::ng-deep .p-button-success:not(.p-button-outlined) .p-button-icon {
-        color: #000000;
+        color: #ffffff;
       }
 
       /* Info button (Switch) - Schneider Blue */
@@ -411,6 +433,22 @@ export class ToolbarComponent {
 
   protected deleteSelected(): void {
     this.canvasService.deleteSelected();
+  }
+
+  protected undo(): void {
+    this.canvasService.undo();
+  }
+
+  protected redo(): void {
+    this.canvasService.redo();
+  }
+
+  protected canUndo(): boolean {
+    return this.canvasService.canUndo();
+  }
+
+  protected canRedo(): boolean {
+    return this.canvasService.canRedo();
   }
 
   protected zoomIn(): void {

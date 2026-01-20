@@ -112,6 +112,18 @@ export class SwitchboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     switch (event.key.toLowerCase()) {
+      case 'z':
+        if (event.ctrlKey && !event.shiftKey) {
+          event.preventDefault();
+          this.canvasService.undo();
+        }
+        break;
+      case 'y':
+        if (event.ctrlKey) {
+          event.preventDefault();
+          this.canvasService.redo();
+        }
+        break;
       case 'a':
         if (event.ctrlKey) {
           event.preventDefault();

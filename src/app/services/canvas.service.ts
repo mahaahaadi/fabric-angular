@@ -35,11 +35,22 @@ export class CanvasService {
   private startX = 0;
   private startY = 0;
   private currentShape: FabricObject | null = null;
+  private smartGuideLines: Line[] = [];
+  private readonly SNAP_THRESHOLD = 5; // pixels
+  
+  // Undo/Redo functionality
+  private history: string[] = [];
+  private historyStep = 0;
+  private isRedoing = false;
+  private isUndoing = false;
+  private readonly MAX_HISTORY = 50;
 
   readonly mode = this.drawingMode.asReadonly();
   readonly selection = this.selectedObject.asReadonly();
   readonly zoom = this.zoomLevel.asReadonly();
   readonly canDelete = computed(() => this.selectedObject() !== null);
+  readonly canUndo = computed(() => this.historyStep > 0);
+  readonly canRedo = computed(() => this.historyStep < this.history.length - 1);
 
   initCanvas(canvasElement: HTMLCanvasElement): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -123,8 +134,30 @@ export class CanvasService {
     );
     this.canvas.on('selection:cleared', () => this.selectedObject.set(null));
     
+    // Smart guides for object movement
+    this.canvas.on('object:moving', (e: any) => this.handleObjectMoving(e));
+    this.canvas.on('object:modified', () => {
+      this.clearSmartGuides();
+      this.saveState();
+    });
+    
+    // Track history on object changes
+    this.canvas.on('object:added', () => {
+      if (!this.isUndoing && !this.isRedoing) {
+        this.saveState();
+      }
+    });
+    this.canvas.on('object:removed', () => {
+      if (!this.isUndoing && !this.isRedoing) {
+        this.saveState();
+      }
+    });
+    
     // Re-render grid before objects are rendered
     this.canvas.on('before:render', () => this.renderGrid());
+    
+    // Save initial state
+    this.saveState();
   }
 
   private renderGrid(): void {
@@ -146,7 +179,7 @@ export class CanvasService {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     
     // Clear and fill background
-    ctx.fillStyle = '#2a2a2a';
+    ctx.fillStyle = '#1e1e1e';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     
     // Apply viewport transform for grid
@@ -164,7 +197,8 @@ export class CanvasService {
     const endX = Math.ceil(visibleRight / gridSize) * gridSize + gridSize;
     const endY = Math.ceil(visibleBottom / gridSize) * gridSize + gridSize;
     
-    ctx.strokeStyle = '#3a3a3a';
+    // Draw grid lines
+    ctx.strokeStyle = '#2a2a2a';
     ctx.lineWidth = 1 / zoom;
     
     // Draw vertical lines
@@ -180,6 +214,17 @@ export class CanvasService {
       ctx.lineTo(endX, y);
     }
     ctx.stroke();
+    
+    // Draw grid dots for better visibility
+    ctx.fillStyle = '#3a3a3a';
+    const dotRadius = 1.5 / zoom;
+    for (let x = startX; x <= endX; x += gridSize) {
+      for (let y = startY; y <= endY; y += gridSize) {
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     
     ctx.restore();
   }
@@ -728,5 +773,251 @@ export class CanvasService {
       this.canvas.dispose();
       this.canvas = null;
     }
+  }
+
+  private handleObjectMoving(e: any): void {
+    if (!this.canvas) return;
+    
+    const movingObj = e.target;
+    if (!movingObj) return;
+    
+    this.clearSmartGuides();
+    
+    const objects = this.canvas.getObjects().filter((obj: any) => obj !== movingObj);
+    if (objects.length < 2) return; // Need at least 2 other objects to compare spacing
+    
+    const snapThreshold = this.SNAP_THRESHOLD / this.canvas.getZoom();
+    
+    // Get bounds of moving object
+    const movingBounds = movingObj.getBoundingRect();
+    
+    // Find all gap/spacing relationships between static objects
+    const gaps: Array<{
+      obj1: any;
+      obj2: any;
+      gap: number;
+      axis: 'x' | 'y';
+      obj1Pos: number;
+      obj2Pos: number;
+    }> = [];
+    
+    for (let i = 0; i < objects.length; i++) {
+      for (let j = i + 1; j < objects.length; j++) {
+        const obj1 = objects[i];
+        const obj2 = objects[j];
+        const bounds1 = obj1.getBoundingRect();
+        const bounds2 = obj2.getBoundingRect();
+        
+        // Calculate horizontal gap (edge to edge)
+        let xGap = 0;
+        if (bounds1.left < bounds2.left) {
+          xGap = bounds2.left - (bounds1.left + bounds1.width);
+        } else {
+          xGap = bounds1.left - (bounds2.left + bounds2.width);
+        }
+        
+        if (xGap >= 0) { // Only consider non-overlapping objects
+          gaps.push({
+            obj1,
+            obj2,
+            gap: xGap,
+            axis: 'x',
+            obj1Pos: bounds1.left,
+            obj2Pos: bounds2.left,
+          });
+        }
+        
+        // Calculate vertical gap (edge to edge)
+        let yGap = 0;
+        if (bounds1.top < bounds2.top) {
+          yGap = bounds2.top - (bounds1.top + bounds1.height);
+        } else {
+          yGap = bounds1.top - (bounds2.top + bounds2.height);
+        }
+        
+        if (yGap >= 0) { // Only consider non-overlapping objects
+          gaps.push({
+            obj1,
+            obj2,
+            gap: yGap,
+            axis: 'y',
+            obj1Pos: bounds1.top,
+            obj2Pos: bounds2.top,
+          });
+        }
+      }
+    }
+    
+    // Check if moving object creates similar gap with any static object
+    for (const obj of objects) {
+      const objBounds = obj.getBoundingRect();
+      
+      // Check horizontal gap
+      let xGap = 0;
+      if (movingBounds.left < objBounds.left) {
+        xGap = objBounds.left - (movingBounds.left + movingBounds.width);
+      } else {
+        xGap = movingBounds.left - (objBounds.left + objBounds.width);
+      }
+      
+      if (xGap >= 0) {
+        const matchingXGap = gaps.find(
+          (g) => g.axis === 'x' && Math.abs(g.gap - xGap) < snapThreshold
+        );
+        
+        if (matchingXGap) {
+          // Snap to matching gap
+          let targetLeft;
+          if (movingBounds.left < objBounds.left) {
+            targetLeft = objBounds.left - matchingXGap.gap - movingBounds.width;
+          } else {
+            targetLeft = objBounds.left + objBounds.width + matchingXGap.gap;
+          }
+          movingObj.set('left', targetLeft);
+          movingObj.setCoords();
+          
+          // Draw guide lines showing the three objects with equal spacing
+          const bounds1 = matchingXGap.obj1.getBoundingRect();
+          const bounds2 = matchingXGap.obj2.getBoundingRect();
+          this.drawSmartGuideLine(
+            bounds1.left + bounds1.width / 2,
+            bounds2.left + bounds2.width / 2,
+            targetLeft + movingBounds.width / 2,
+            'vertical'
+          );
+        }
+      }
+      
+      // Check vertical gap
+      let yGap = 0;
+      if (movingBounds.top < objBounds.top) {
+        yGap = objBounds.top - (movingBounds.top + movingBounds.height);
+      } else {
+        yGap = movingBounds.top - (objBounds.top + objBounds.height);
+      }
+      
+      if (yGap >= 0) {
+        const matchingYGap = gaps.find(
+          (g) => g.axis === 'y' && Math.abs(g.gap - yGap) < snapThreshold
+        );
+        
+        if (matchingYGap) {
+          // Snap to matching gap
+          let targetTop;
+          if (movingBounds.top < objBounds.top) {
+            targetTop = objBounds.top - matchingYGap.gap - movingBounds.height;
+          } else {
+            targetTop = objBounds.top + objBounds.height + matchingYGap.gap;
+          }
+          movingObj.set('top', targetTop);
+          movingObj.setCoords();
+          
+          // Draw guide lines showing the three objects with equal spacing
+          const bounds1 = matchingYGap.obj1.getBoundingRect();
+          const bounds2 = matchingYGap.obj2.getBoundingRect();
+          this.drawSmartGuideLine(
+            bounds1.top + bounds1.height / 2,
+            bounds2.top + bounds2.height / 2,
+            targetTop + movingBounds.height / 2,
+            'horizontal'
+          );
+        }
+      }
+    }
+    
+    this.canvas.renderAll();
+  }
+
+  private drawSmartGuideLine(pos1: number, pos2: number, pos3: number, orientation: 'horizontal' | 'vertical'): void {
+    if (!this.canvas) return;
+    
+    const positions = [pos1, pos2, pos3].sort((a, b) => a - b);
+    const canvasWidth = this.canvas.width || 800;
+    const canvasHeight = this.canvas.height || 600;
+    
+    if (orientation === 'vertical') {
+      // Draw vertical lines at each x position
+      positions.forEach((x) => {
+        const line = new Line([x, 0, x, canvasHeight], {
+          stroke: '#3DCD58',
+          strokeWidth: 1 / this.canvas!.getZoom(),
+          strokeDashArray: [5, 5],
+          selectable: false,
+          evented: false,
+        });
+        this.canvas!.add(line);
+        this.smartGuideLines.push(line);
+      });
+    } else {
+      // Draw horizontal lines at each y position
+      positions.forEach((y) => {
+        const line = new Line([0, y, canvasWidth, y], {
+          stroke: '#3DCD58',
+          strokeWidth: 1 / this.canvas!.getZoom(),
+          strokeDashArray: [5, 5],
+          selectable: false,
+          evented: false,
+        });
+        this.canvas!.add(line);
+        this.smartGuideLines.push(line);
+      });
+    }
+  }
+
+  private clearSmartGuides(): void {
+    if (!this.canvas) return;
+    
+    this.smartGuideLines.forEach((line) => {
+      this.canvas!.remove(line);
+    });
+    this.smartGuideLines = [];
+    this.canvas.renderAll();
+  }
+
+  private saveState(): void {
+    if (!this.canvas) return;
+    
+    const json = JSON.stringify(this.canvas.toJSON());
+    
+    // Remove any future states if we're not at the end
+    if (this.historyStep < this.history.length - 1) {
+      this.history = this.history.slice(0, this.historyStep + 1);
+    }
+    
+    // Add new state
+    this.history.push(json);
+    
+    // Limit history size
+    if (this.history.length > this.MAX_HISTORY) {
+      this.history.shift();
+    } else {
+      this.historyStep++;
+    }
+  }
+
+  undo(): void {
+    if (!this.canvas || this.historyStep <= 0) return;
+    
+    this.isUndoing = true;
+    this.historyStep--;
+    
+    const state = this.history[this.historyStep];
+    this.canvas.loadFromJSON(state, () => {
+      this.canvas?.renderAll();
+      this.isUndoing = false;
+    });
+  }
+
+  redo(): void {
+    if (!this.canvas || this.historyStep >= this.history.length - 1) return;
+    
+    this.isRedoing = true;
+    this.historyStep++;
+    
+    const state = this.history[this.historyStep];
+    this.canvas.loadFromJSON(state, () => {
+      this.canvas?.renderAll();
+      this.isRedoing = false;
+    });
   }
 }
