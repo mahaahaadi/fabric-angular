@@ -72,7 +72,7 @@ export class CanvasService {
     const height = Math.max(availableHeight, 500);
 
     this.canvas = new Canvas(canvasElement, {
-      backgroundColor: '#2a2a2a',
+      backgroundColor: '#1e1e1e',
       width: width,
       height: height,
       selection: true,
